@@ -23,6 +23,7 @@ type Request struct {
 var ERROR_BAD_START_LINE = fmt.Errorf("error in the start line")
 var INCOMPLETE_START_LINE = fmt.Errorf("start line is incomplete")
 var ERROR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("the http version is not supported :P")
+var ERROR_NO_CRLF = fmt.Errorf("crlf not found yet")
 var ERROR_IN_HEADER = fmt.Errorf("corrupted header")
 var SEPARATOR = []byte("\r\n")
 
@@ -67,11 +68,11 @@ outer:
 		case StateRequestLineDone:
 			h, n, err := parseHeaders(data[read:])
 			if err != nil {
-				return 0, err
+				return read, err
 			}
 
 			if n == 0 {
-				return 0, nil
+				return read, nil
 			}
 
 			r.Headers = h
@@ -126,6 +127,7 @@ func parseHeaders(b []byte) (map[string]string, int, error) {
 	headers := make(map[string]string)
 	he := append(SEPARATOR, SEPARATOR...)
 	n := bytes.Index(b, he)
+
 	if n == -1 {
 		return nil, 0, nil
 	}
@@ -143,6 +145,7 @@ func parseHeaders(b []byte) (map[string]string, int, error) {
 			return nil, 0, ERROR_IN_HEADER
 		}
 		e := []string{string(hl[i])[:ei], string(hl[i])[ei+1:]}
+
 		if strings.Contains(e[0], " ") {
 			return nil, 0, ERROR_IN_HEADER
 		}
