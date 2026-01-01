@@ -57,6 +57,6 @@ func main() {
 		fmt.Println(r.RequestLine.HttpVersion)
 		fmt.Println(r.RequestLine.Method)
 		fmt.Println(r.RequestLine.RequestTarget)
-
+		fmt.Println("Body:", r.Body)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +18,7 @@ type RequestLine struct {
 type Request struct {
 	RequestLine RequestLine
 	Headers     map[string]string
+	Body        string
 	state       parserState
 }
 
@@ -24,6 +26,7 @@ var ERROR_BAD_START_LINE = fmt.Errorf("error in the start line")
 var INCOMPLETE_START_LINE = fmt.Errorf("start line is incomplete")
 var ERROR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("the http version is not supported :P")
 var ERROR_NO_CRLF = fmt.Errorf("crlf not found yet")
+var ERROR_INVALID_CONTENTLEN = fmt.Errorf("content length is invalid")
 var ERROR_IN_HEADER = fmt.Errorf("corrupted header")
 var SEPARATOR = []byte("\r\n")
 
@@ -39,6 +42,14 @@ const (
 
 func (r *RequestLine) validHTTP() bool {
 	return r.HttpVersion == "1.1"
+}
+
+func (r *Request) Get(key string) (string, bool) {
+	if key, exists := r.Headers[key]; exists {
+		return key, true
+	} else {
+		return "", false
+	}
 }
 
 func newRequest() *Request {
@@ -81,8 +92,28 @@ outer:
 			continue
 
 		case StateHeadersDone:
-			//parse the body
-			r.state = StateDone
+			cl, exists := r.Get("content-length")
+			if !exists {
+				cl = "0"
+			}
+			clen, err := strconv.Atoi(cl)
+			if err != nil {
+				return 0, err
+			}
+			if clen == 0 {
+				r.state = StateDone
+				continue
+			}
+			current := ""
+			current += string(data[read:])
+			r.Body += current
+			read += len(current)
+			if len(r.Body) >= clen {
+				r.state = StateDone
+			} else {
+				return read, nil
+			}
+
 			continue
 
 		case StateDone:
@@ -172,20 +203,20 @@ func parseHeaders(b []byte) (map[string]string, int, error) {
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := newRequest()
 	buf := make([]byte, 1024)
-	bufLen := 0
+	bufIdx := 0
 	for !request.done() {
-		n, err := reader.Read(buf[bufLen:])
+		n, err := reader.Read(buf[bufIdx:])
 
 		if err != nil {
 			return nil, err
 		}
-		bufLen += n
-		readN, err := request.parse(buf[:bufLen])
+		bufIdx += n
+		readN, err := request.parse(buf[:bufIdx])
 		if err != nil {
 			return nil, err
 		}
-		copy(buf, buf[readN:bufLen])
-		bufLen -= readN
+		copy(buf, buf[readN:bufIdx])
+		bufIdx -= readN
 
 	}
 	return request, nil
